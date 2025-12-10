@@ -1,0 +1,40 @@
+version: 0.2
+
+env:
+  variables:
+    AWS_DEFAULT_REGION: eu-west-3
+    FRONTEND_REPO: assimetria-challenge-frontend
+    BACKEND_REPO: assimetria-challenge-backend
+
+phases:
+  pre_build:
+    commands:
+      - echo Logging in to Amazon ECR...
+      - aws --version
+      - export AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+      - "echo Account ID: $AWS_ACCOUNT_ID"
+      - "echo Region: $AWS_DEFAULT_REGION"
+      - 'export ECR="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com"'
+      - "echo ECR Registry: $ECR"
+      - aws ecr get-login-password --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin $ECR
+      - 'export IMAGE_FRONTEND="$ECR/$FRONTEND_REPO:latest"'
+      - 'export IMAGE_BACKEND="$ECR/$BACKEND_REPO:latest"'
+  build:
+    commands:
+      - echo Building backend...
+      - docker build -t $IMAGE_BACKEND ./backend
+      - echo Building frontend...
+      - |
+        # Note: Frontend API URL will be set during EC2 deployment
+        # This allows the frontend to be built with a placeholder that gets replaced
+        # on EC2 with the actual public IP address
+        docker build --build-arg VITE_API_URL="${VITE_API_URL:-http://localhost:4000/api}" -t $IMAGE_FRONTEND ./frontend
+  post_build:
+    commands:
+      - echo Pushing images...
+      - docker push $IMAGE_BACKEND
+      - docker push $IMAGE_FRONTEND
+
+artifacts:
+  files:
+    - "**/*"
